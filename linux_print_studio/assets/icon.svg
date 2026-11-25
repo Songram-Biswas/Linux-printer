@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2c3e50" />
+      <stop offset="100%" stop-color="#1a252f" />
+    </linearGradient>
+    <linearGradient id="docGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ecf0f1" />
+      <stop offset="100%" stop-color="#bdc3c7" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3498db" />
+      <stop offset="100%" stop-color="#2980b9" />
+    </linearGradient>
+  </defs>
+
+  <!-- Top Input Paper Tray -->
+  <rect x="36" y="14" width="56" height="40" rx="4" fill="url(#docGrad)" stroke="#7f8c8d" stroke-width="2" />
+  <!-- Text lines on top paper -->
+  <line x1="44" y1="24" x2="84" y2="24" stroke="#7f8c8d" stroke-width="2" stroke-linecap="round" />
+  <line x1="44" y1="32" x2="76" y2="32" stroke="#7f8c8d" stroke-width="2" stroke-linecap="round" />
+  <line x1="44" y1="40" x2="80" y2="40" stroke="#7f8c8d" stroke-width="2" stroke-linecap="round" />
+
+  <!-- Main Printer Body -->
+  <rect x="18" y="44" width="92" height="48" rx="8" fill="url(#bodyGrad)" stroke="#34495e" stroke-width="2" />
+  
+  <!-- LED status light -->
+  <circle cx="28" cy="56" r="3" fill="#2ecc71" />
+  <circle cx="36" cy="56" r="3" fill="#3498db" />
+
+  <!-- Front Output Slot -->
+  <rect x="28" y="66" width="72" height="10" rx="3" fill="#11181f" />
+
+  <!-- Bottom Output Paper -->
+  <path d="M 32 72 L 96 72 L 92 112 L 36 112 Z" fill="url(#docGrad)" stroke="#95a5a6" stroke-width="2" />
+
+  <!-- Reverse arrows badge (signifying Reverse Page Order) -->
+  <circle cx="96" cy="96" r="20" fill="url(#accentGrad)" stroke="#ffffff" stroke-width="2.5" />
+  <path d="M 90 92 L 102 92 M 90 92 L 94 88 M 90 92 L 94 96" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  <path d="M 102 100 L 90 100 M 102 100 L 98 96 M 102 100 L 98 104" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+
+  <!-- Black & White indicator badge (Half black half white circle) -->
+  <g transform="translate(18, 92)">
+    <circle cx="12" cy="12" r="14" fill="#34495e" stroke="#ffffff" stroke-width="2" />
+    <path d="M 12 2 A 10 10 0 0 1 12 22 Z" fill="#ffffff" />
+    <path d="M 12 2 A 10 10 0 0 0 12 22 Z" fill="#111111" />
+  </g>
+</svg>

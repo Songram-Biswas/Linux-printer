@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Linux Print Studio
+GenericName=PDF & Image Printing Utility
+Comment=Print PDFs and Images with Reverse Page Order, Odd/Even Filtering, and Dedicated Black & White Conversion
+Exec=linux-print-studio %U
+Icon=linux-print-studio
+Terminal=false
+Categories=Office;Publishing;Graphics;Utility;
+MimeType=application/pdf;image/png;image/jpeg;image/bmp;image/webp;image/tiff;
+Keywords=print;printer;pdf;cups;reverse;odd;even;grayscale;black and white;
+StartupNotify=true
