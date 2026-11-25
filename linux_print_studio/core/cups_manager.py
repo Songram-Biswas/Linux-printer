@@ -1,6 +1,6 @@
 """
 CUPS Printer Manager for Linux.
-Discovers local and network CUPS printers, detects default printer,
+Discovers local and network CUPS printers, detects default printer and PPD capabilities,
 and submits print jobs via standard CUPS utilities (`lpstat`, `lpoptions`, `lp`).
 """
 
@@ -18,9 +18,19 @@ class PrinterInfo:
     status: str  # 'idle', 'printing', 'stopped', 'unknown'
 
 
+@dataclass
+class PrinterCapabilities:
+    is_gutenprint: bool = False
+    has_stp_ink_set_black: bool = False
+    has_stp_ink_type_gray: bool = False
+    gray_color_model: Optional[str] = "Gray"
+    supports_duplex: bool = True
+
+
 class CupsManager:
     """
-    Manages interaction with CUPS on Linux.
+    Manages interaction with CUPS on Linux, including driver-aware option selection
+    (e.g., Gutenprint Canon/Epson ink-set alignment and hardware duplex detection).
     """
 
     def __init__(self):
@@ -28,16 +38,102 @@ class CupsManager:
         self.lp_bin = shutil.which("lp")
         self.lpoptions_bin = shutil.which("lpoptions")
         self.cancel_bin = shutil.which("cancel")
+        self._cap_cache: Dict[str, PrinterCapabilities] = {}
 
     @property
     def is_cups_available(self) -> bool:
         return bool(self.lpstat_bin and self.lp_bin)
+
+    @staticmethod
+    def _parse_lpoptions_output(output: str) -> Optional[PrinterCapabilities]:
+        """
+        Parses `lpoptions -p <printer> -l` output into PrinterCapabilities.
+        Returns None if output does not look like valid PPD option lines.
+        """
+        options: Dict[str, List[str]] = {}
+        for raw_line in output.splitlines():
+            line = raw_line.strip()
+            if ":" not in line or "/" not in line.split(":", 1)[0]:
+                continue
+            key_part, values_part = line.split(":", 1)
+            opt_name = key_part.split("/", 1)[0].strip()
+            values = [v.lstrip("*").strip() for v in values_part.split() if v.strip()]
+            if opt_name and values:
+                options[opt_name] = values
+
+        if not options:
+            return None
+
+        is_gutenprint = any(
+            k in options for k in ("StpInkSet", "StpInkType", "StpQuality", "StpColorPrecision")
+        )
+        has_stp_ink_set_black = "Black" in options.get("StpInkSet", [])
+        has_stp_ink_type_gray = "Gray" in options.get("StpInkType", [])
+
+        # Detect exact Grayscale ColorModel value supported by this PPD
+        gray_cm: Optional[str] = None
+        cm_vals = options.get("ColorModel", [])
+        for candidate in ("Gray", "Grayscale", "KGray", "Black"):
+            if candidate in cm_vals:
+                gray_cm = candidate
+                break
+
+        # Detect hardware duplex support in PPD
+        duplex_keys = ("Duplex", "JCLDuplex", "EFDuplex", "KD03Duplex", "CNDuplex")
+        supports_duplex = any(
+            len(options.get(k, [])) > 1 for k in duplex_keys
+        )
+
+        return PrinterCapabilities(
+            is_gutenprint=is_gutenprint,
+            has_stp_ink_set_black=has_stp_ink_set_black,
+            has_stp_ink_type_gray=has_stp_ink_type_gray,
+            gray_color_model=gray_cm,
+            supports_duplex=supports_duplex,
+        )
+
+    def get_printer_capabilities(
+        self,
+        printer_name: str,
+        refresh: bool = False
+    ) -> PrinterCapabilities:
+        """
+        Queries `lpoptions -p <printer_name> -l` to detect driver-specific options
+        (Gutenprint StpInkSet/StpInkType, ColorModel values, hardware Duplex support).
+        """
+        if not printer_name or printer_name == "Print_to_PDF":
+            return PrinterCapabilities(supports_duplex=False)
+
+        if not refresh and printer_name in self._cap_cache:
+            return self._cap_cache[printer_name]
+
+        default_caps = PrinterCapabilities()
+        if not self.lpoptions_bin:
+            return default_caps
+
+        try:
+            proc = subprocess.run(
+                [self.lpoptions_bin, "-p", printer_name, "-l"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if proc.returncode == 0 and proc.stdout:
+                parsed = self._parse_lpoptions_output(proc.stdout)
+                if parsed is not None:
+                    self._cap_cache[printer_name] = parsed
+                    return parsed
+        except Exception as e:
+            print(f"Error querying printer options for {printer_name}: {e}")
+
+        return default_caps
 
     def get_printers(self) -> List[PrinterInfo]:
         """
         Discovers all configured CUPS printers using `lpstat -p -d`.
         Returns a list of PrinterInfo objects.
         """
+        self._cap_cache.clear()
         printers: List[PrinterInfo] = []
         default_printer: Optional[str] = None
 
@@ -132,19 +228,20 @@ class CupsManager:
         printer_name: str,
         copies: int = 1,
         page_size: str = "A4",
-        orientation: str = "portrait",  # 'portrait', 'landscape'
+        orientation: str = "auto",      # 'auto', 'portrait', 'landscape'
         duplex: str = "simplex",        # 'simplex', 'long-edge', 'short-edge'
         force_grayscale: bool = False,
         fit_to_page: bool = True,
         job_title: str = "Linux Print Studio Job"
     ) -> Tuple[bool, str]:
         """
-        Executes standard CUPS `lp` command with all options.
+        Executes standard CUPS `lp` command with driver-safe options.
         Returns (success: bool, message: str).
         """
         if not self.lp_bin:
             return False, "CUPS 'lp' command line tool not found on system."
 
+        caps = self.get_printer_capabilities(printer_name)
         cmd = [self.lp_bin, "-d", printer_name]
 
         # Copies
@@ -165,24 +262,35 @@ class CupsManager:
         elif orientation == "portrait":
             cmd.extend(["-o", "orientation-requested=3"])
 
-        # Duplex
-        if duplex == "long-edge":
+        # Duplex (only send two-sided flags when printer hardware supports duplex)
+        if duplex == "long-edge" and caps.supports_duplex:
             cmd.extend(["-o", "sides=two-sided-long-edge"])
-        elif duplex == "short-edge":
+        elif duplex == "short-edge" and caps.supports_duplex:
             cmd.extend(["-o", "sides=two-sided-short-edge"])
-        elif duplex == "simplex":
+        elif duplex == "simplex" or not caps.supports_duplex:
             cmd.extend(["-o", "sides=one-sided"])
 
         # Fit to page
         if fit_to_page:
             cmd.extend(["-o", "fit-to-page"])
 
-        # Color mode enforcement in CUPS
+        # Driver-aware Black & White / Grayscale enforcement
         if force_grayscale:
-            cmd.extend([
-                "-o", "ColorModel=Gray",
-                "-o", "print-color-mode=monochrome"
-            ])
+            if caps.is_gutenprint and caps.has_stp_ink_set_black:
+                # CRITICAL for Gutenprint Canon/Epson printers (e.g. PIXMA iP2772):
+                # Setting ColorModel=Gray WITHOUT StpInkSet=Black causes Gutenprint to emit
+                # a mismatched ESC(t (4-channel CMYK) + ESC(L (1-channel K) header that Canon
+                # firmware silently drops without feeding paper!
+                # Setting StpInkSet=Black (+ StpInkType=Gray) generates a valid Black-only stream.
+                cmd.extend(["-o", "StpInkSet=Black"])
+                if caps.has_stp_ink_type_gray:
+                    cmd.extend(["-o", "StpInkType=Gray"])
+                if caps.gray_color_model:
+                    cmd.extend(["-o", f"ColorModel={caps.gray_color_model}"])
+            else:
+                if caps.gray_color_model:
+                    cmd.extend(["-o", f"ColorModel={caps.gray_color_model}"])
+                cmd.extend(["-o", "print-color-mode=monochrome"])
 
         cmd.append(file_path)
 
